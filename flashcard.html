@@ -150,6 +150,55 @@
     letter-spacing: 1px;
   }
 
+  /* ---- 鍵盤快捷鍵提示（右下角） ---- */
+  .shortcuts {
+    position: fixed;
+    right: 18px;
+    bottom: 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+    align-items: flex-start;
+    padding: 10px 14px;
+    background: rgba(255, 255, 255, 0.08);
+    border: 1px solid rgba(255, 255, 255, 0.16);
+    border-radius: 12px;
+    backdrop-filter: blur(4px);
+    font-size: 0.78rem;
+    color: rgba(255, 255, 255, 0.8);
+  }
+
+  .shortcut {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    line-height: 1.5;
+    white-space: nowrap;
+  }
+
+  kbd {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 24px;
+    height: 22px;
+    padding: 0 7px;
+    border: 1px solid rgba(255, 255, 255, 0.45);
+    border-bottom-width: 2px;
+    border-radius: 6px;
+    background: rgba(255, 255, 255, 0.14);
+    color: #fff;
+    font-family: inherit;
+    font-size: 0.72rem;
+    font-weight: 600;
+    box-shadow: 0 2px 0 rgba(0, 0, 0, 0.25);
+  }
+
+  /* 手機上不顯示鍵盤提示（沒有實體鍵盤） */
+  @media (max-width: 520px) {
+    .shortcuts { display: none; }
+  }
+
   footer {
     font-size: 0.75rem;
     opacity: 0.5;
@@ -161,7 +210,6 @@
 
   <header>
     <h1>📚 隨機單字卡</h1>
-    <p>點擊卡片翻面 · 空白鍵翻面 · Enter 下一題</p>
   </header>
 
   <!-- 卡片 -->
@@ -184,13 +232,22 @@
 
   <!-- 控制列 -->
   <div class="controls">
+    <button class="btn-next" id="btnPrev">上一張</button>
     <button class="btn-flip" id="btnFlip">翻面</button>
-    <button class="btn-next" id="btnNext">下一題 🎲</button>
+    <button class="btn-next" id="btnNext">下一張</button>
   </div>
 
   <div class="meta" id="meta"></div>
 
   <footer>內建 10 個單字 · 每次抽取不重複</footer>
+
+  <!-- 鍵盤快捷鍵提示（右下角） -->
+  <div class="shortcuts" aria-label="鍵盤快捷鍵">
+    <div class="shortcut"><kbd>←</kbd><span>上一張</span></div>
+    <div class="shortcut"><kbd>Enter</kbd><kbd>→</kbd><span>下一張</span></div>
+    <div class="shortcut"><kbd>Space</kbd><kbd>↑</kbd><kbd>↓</kbd><span>翻面</span></div>
+    <div class="shortcut"><span>點擊卡片翻面</span></div>
+  </div>
 
 <script>
   // ===== 單字庫：英文 / 詞性 / 中文 / 英例句 / 中例句 =====
@@ -269,8 +326,8 @@
 
   // ===== 狀態 =====
   let currentIndex = 0;       // 目前顯示的單字
-  let remaining = [];         // 尚未抽過的索引池
-  let shownCount = 0;         // 本輪已抽出的題數（正向計數）
+  let order = [];             // 本輪的抽牌順序（已洗牌）
+  let position = -1;          // 目前位於 order 的第幾張（0 起算）
   const cardEl = document.getElementById("card");
 
   // DOM 元素
@@ -300,22 +357,31 @@
     backTrans.textContent  = w.zh;
     backWord.textContent   = `(${w.pos}) ${w.en}`;
     backEx.textContent     = w.exZh;
-    metaEl.textContent     = `第 ${shownCount} / ${WORDS.length} 題 · 剩餘 ${remaining.length} 個單字`;
-    cardEl.classList.remove("flipped");  // 下一題回到英文面
+    metaEl.textContent     = `第 ${position + 1} / ${WORDS.length} 張 · 剩餘 ${order.length - position - 1} 張`;
+    cardEl.classList.remove("flipped");  // 切換卡片時回到英文面
   }
 
   // 抽出「不同於目前」的隨機單字
   function nextCard() {
-    if (remaining.length === 0) {
-      remaining = shuffle(WORDS.map((_, i) => i));
-      shownCount = 0;  // 重新洗牌，題數歸零重算
-      // 避免下一題立刻抽到同一張
-      if (remaining.length > 1 && remaining[0] === currentIndex) {
-        [remaining[0], remaining[1]] = [remaining[1], remaining[0]];
+    position++;
+    if (position >= order.length) {
+      // 本輪抽完，重新洗牌一輪
+      order = shuffle(WORDS.map((_, i) => i));
+      // 避免下一張立刻抽到同一張
+      if (order.length > 1 && order[0] === currentIndex) {
+        [order[0], order[1]] = [order[1], order[0]];
       }
+      position = 0;
     }
-    currentIndex = remaining.shift();
-    shownCount++;
+    currentIndex = order[position];
+    showCard(currentIndex);
+  }
+
+  // 返回上一張（設計與下一張相同）
+  function prevCard() {
+    if (position <= 0) return;  // 已是最前面，無法再往前
+    position--;
+    currentIndex = order[position];
     showCard(currentIndex);
   }
 
@@ -327,9 +393,10 @@
   // ===== 事件綁定 =====
   document.getElementById("btnFlip").addEventListener("click", toggleFlip);
   document.getElementById("btnNext").addEventListener("click", nextCard);
+  document.getElementById("btnPrev").addEventListener("click", prevCard);
   cardEl.addEventListener("click", toggleFlip);
 
-  // 鍵盤支援：空白鍵翻面、Enter 下一題
+  // 鍵盤支援：空白鍵翻面、Enter / → 下一張、← 上一張
   document.addEventListener("keydown", (e) => {
     if (e.code === "Space" || e.code === "ArrowUp" || e.code === "ArrowDown") {
       e.preventDefault();
@@ -337,10 +404,13 @@
     } else if (e.code === "Enter" || e.code === "ArrowRight") {
       e.preventDefault();
       nextCard();
+    } else if (e.code === "ArrowLeft") {
+      e.preventDefault();
+      prevCard();
     }
   });
 
-  // ===== 初始化：抽第一題 =====
+  // ===== 初始化：抽第一張 =====
   nextCard();
 </script>
 </body>
